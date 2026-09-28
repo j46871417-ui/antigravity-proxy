@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  antigravity-proxy:
+    build: .
+    container_name: antigravity-proxy
+    restart: unless-stopped
+    ports:
+      - "50128:50128"
+    environment:
+      - PROXY_USER=antigravity
+      - PROXY_PASS=ChangeMeSecret123
+      - LOG_LEVEL=INFO

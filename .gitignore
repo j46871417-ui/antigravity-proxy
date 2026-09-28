@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+config.env
+*.pem
+*.key
+*.crt
+.DS_Store
+.vscode/
+.idea/
