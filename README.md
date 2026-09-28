@@ -4,10 +4,13 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
 [![HAProxy 2.8+](https://img.shields.io/badge/HAProxy-2.8%2B-orange.svg)](https://www.haproxy.org/)
 [![Docker Ready](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](docker-compose.yml)
+[![Telegram Chat](https://img.shields.io/badge/Telegram-Беседа_сообщества-2CA5E0?logo=telegram)](https://t.me/+8qU7020rMF84OWNi)
 
 Высокоскоростной двухрежимный (Dual-Mode) шлюз-прокси для обхода региональных ограничений и блокировок **Google Antigravity**, **Gemini Code Assist** и **Google Cloud Code**.
 
 Разработан специально для интеграции с клиентом [confeden/Antigravity](https://github.com/confeden/Antigravity), а также расширениями для **VS Code** и **JetBrains IDE**.
+
+💬 **Telegram-беседа сообщества:** [https://t.me/+8qU7020rMF84OWNi](https://t.me/+8qU7020rMF84OWNi)
 
 ---
 
@@ -183,6 +186,13 @@ docker compose up -d --build
 * `chatgpt.com`, `claude.ai` (резервные проверки патчера)
 
 Попытки использовать этот прокси для сёрфинга в браузере или загрузки сторонних файлов мгновенно блокируются сервером (`403 Forbidden`).
+
+---
+
+## 💬 Сообщество и поддержка
+
+Если у вас появились вопросы по настройке, предложения или вы хотите обсудить проект:
+👉 **[Присоединиться к нашей Telegram-беседе](https://t.me/+8qU7020rMF84OWNi)**
 
 ---
 
