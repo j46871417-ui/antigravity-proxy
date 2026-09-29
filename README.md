@@ -177,15 +177,19 @@ docker compose up -d --build
 
 ## 🛡 Белый список хостов (Zero-Trust Whitelist)
 
-Прокси пропускает запросы **только** к ресурсам, строго необходимым для работы Antigravity:
-* `cloudcode-pa.googleapis.com` / `daily-cloudcode-pa.googleapis.com` (генерация кода)
+Прокси пропускает запросы **только** к ресурсам, строго необходимым для работы Antigravity и разработческих AI-инструментов:
+* `cloudcode-pa.googleapis.com` / `daily-cloudcode-pa.googleapis.com` (генерация кода Google Cloud Code)
 * `generativelanguage.googleapis.com` (Gemini API)
-* `accounts.google.com` / `oauth2.googleapis.com` (авторизация аккаунта)
+* `accounts.google.com` / `oauth2.googleapis.com` (авторизация аккаунта Google)
+* `gemini-api-docs-mcp.dev` (официальный MCP-сервер документации Gemini API для субагентов)
+* `antigravity-cli-auto-updater-*.run.app` / `*.run.app` (авто-обновление компонентов Antigravity)
+* `api.openai.com` / `*.openai.com` (API OpenAI для мульти-модельных конфигураций)
 * `*.googleapis.com`, `*.googleusercontent.com`, `*.gstatic.com`, `*.google.com`
 * `www.cloudflare.com` (проверка региона патчером через `/cdn-cgi/trace`)
 * `chatgpt.com`, `claude.ai` (резервные проверки патчера)
+* **Подсети Google AS15169**: поддержка клиентов в режиме TUN / Proxifier, где DNS резолвится локально в прямые IP-адреса Google на портах 80, 443 и 5228.
 
-Попытки использовать этот прокси для сёрфинга в браузере или загрузки сторонних файлов мгновенно блокируются сервером (`403 Forbidden`).
+Попытки использовать этот прокси для общего веб-сёрфинга, торрентов, соцсетей или загрузки сторонних файлов мгновенно отклоняются сервером (`403 Forbidden`).
 
 ---
 

@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 import json
+import ipaddress
 import urllib.parse
 from datetime import datetime
 
@@ -35,7 +36,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("AntigravityProxy")
 
-# Antigravity & Google Cloud Code strict whitelist
+# Antigravity, Google Cloud Code & AI APIs strict whitelist
 ALLOWED_EXACT_HOSTS = {
     "cloudcode-pa.googleapis.com",
     "daily-cloudcode-pa.googleapis.com",
@@ -52,6 +53,9 @@ ALLOWED_EXACT_HOSTS = {
     "claude.ai",
     "www.google.com",
     "myaccount.google.com",
+    "gemini-api-docs-mcp.dev",
+    "api.openai.com",
+    "antigravity-cli-auto-updater-974169037036.us-central1.run.app",
 }
 
 ALLOWED_DOMAIN_SUFFIXES = (
@@ -59,9 +63,34 @@ ALLOWED_DOMAIN_SUFFIXES = (
     ".googleusercontent.com",
     ".gstatic.com",
     ".google.com",
+    ".run.app",
+    ".openai.com",
 )
 
-ALLOWED_PORTS = {80, 443}
+ALLOWED_PORTS = {80, 443, 5228}
+
+# Known Google IP subnets (AS15169) for clients resolving DNS locally
+GOOGLE_IP_NETWORKS = [
+    ipaddress.ip_network("172.217.0.0/16"),
+    ipaddress.ip_network("142.250.0.0/15"),
+    ipaddress.ip_network("142.251.0.0/16"),
+    ipaddress.ip_network("108.177.0.0/17"),
+    ipaddress.ip_network("209.85.128.0/17"),
+    ipaddress.ip_network("173.194.0.0/16"),
+    ipaddress.ip_network("64.233.160.0/19"),
+    ipaddress.ip_network("74.125.0.0/16"),
+    ipaddress.ip_network("172.253.0.0/16"),
+    ipaddress.ip_network("192.179.0.0/16"),
+    ipaddress.ip_network("216.58.192.0/19"),
+    ipaddress.ip_network("216.239.32.0/19"),
+]
+
+def is_google_ip(ip_str: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        return any(addr in net for net in GOOGLE_IP_NETWORKS)
+    except ValueError:
+        return False
 
 def load_multi_users() -> dict:
     if os.path.exists(USERS_FILE):
@@ -93,6 +122,9 @@ def is_host_allowed(host: str, port: int) -> bool:
         return True
     for suffix in ALLOWED_DOMAIN_SUFFIXES:
         if h.endswith(suffix):
+            return True
+    if h and (h[0].isdigit() or ':' in h):
+        if is_google_ip(h):
             return True
     return False
 
