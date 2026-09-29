@@ -128,14 +128,70 @@ def is_host_allowed(host: str, port: int) -> bool:
             return True
     return False
 
-async def pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+USER_TRAFFIC_FILE = os.getenv("USER_TRAFFIC_FILE", "/opt/antigravity-proxy/user_traffic.json")
+USER_MONTHLY_SOFT_LIMIT_BYTES = int(os.getenv("USER_MONTHLY_SOFT_LIMIT_BYTES", str(30 * 1024 * 1024 * 1024)))  # 30 GB
+
+_traffic_month = datetime.now().strftime("%Y-%m")
+_user_traffic_mem = {}
+
+def load_user_traffic():
+    global _user_traffic_mem, _traffic_month
+    cur_m = datetime.now().strftime("%Y-%m")
+    _traffic_month = cur_m
+    if os.path.exists(USER_TRAFFIC_FILE):
+        try:
+            with open(USER_TRAFFIC_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data.get("month") == cur_m:
+                    _user_traffic_mem = data.get("traffic", {})
+        except Exception as e:
+            logger.debug(f"Could not load user traffic file: {e}")
+
+def save_user_traffic():
+    try:
+        tmp_path = USER_TRAFFIC_FILE + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump({"month": _traffic_month, "traffic": _user_traffic_mem}, f)
+        os.replace(tmp_path, USER_TRAFFIC_FILE)
+    except Exception as e:
+        logger.debug(f"Could not save user traffic file: {e}")
+
+def record_user_traffic(user: str, num_bytes: int):
+    global _traffic_month
+    cur_m = datetime.now().strftime("%Y-%m")
+    if cur_m != _traffic_month:
+        _user_traffic_mem.clear()
+        _traffic_month = cur_m
+    _user_traffic_mem[user] = _user_traffic_mem.get(user, 0) + num_bytes
+
+def is_user_soft_throttled(user: str) -> bool:
+    return _user_traffic_mem.get(user, 0) > USER_MONTHLY_SOFT_LIMIT_BYTES
+
+async def traffic_persist_loop():
+    while True:
+        await asyncio.sleep(60)
+        save_user_traffic()
+
+async def pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, proxy_user: str = None, is_throttled: bool = False):
     try:
         while True:
             data = await reader.read(BUFFER_SIZE)
             if not data:
                 break
+            data_len = len(data)
+            if proxy_user:
+                record_user_traffic(proxy_user, data_len)
+
             writer.write(data)
             await writer.drain()
+
+            if is_throttled:
+                # Soft throttle to ~400 KB/s (~3.2 Mbps)
+                await asyncio.sleep(data_len / 400_000.0)
+            else:
+                # Smoothing burst limiter for heavy chunks (>32KB) to cap sustained line speed at ~28 Mbps
+                if data_len > 32768:
+                    await asyncio.sleep(data_len / 3_500_000.0)
     except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError):
         pass
     except Exception as e:
@@ -302,10 +358,11 @@ async def handle_client(client_reader: asyncio.StreamReader, client_writer: asyn
                 remote_writer.write(remaining_body)
             await remote_writer.drain()
 
-        # Bidirectional relay
+        is_throttled = is_user_soft_throttled(proxy_user)
+        # Bidirectional relay with traffic accounting and soft shaping
         await asyncio.gather(
-            pipe(client_reader, remote_writer),
-            pipe(remote_reader, client_writer),
+            pipe(client_reader, remote_writer, proxy_user=proxy_user, is_throttled=is_throttled),
+            pipe(remote_reader, client_writer, proxy_user=proxy_user, is_throttled=is_throttled),
             return_exceptions=True
         )
 
@@ -321,6 +378,8 @@ async def handle_client(client_reader: asyncio.StreamReader, client_writer: asyn
             pass
 
 async def main():
+    load_user_traffic()
+    asyncio.create_task(traffic_persist_loop())
     logger.info(f"Starting Antigravity Proxy Core on {LISTEN_HOST}:{LISTEN_PORT}...")
     server = await asyncio.start_server(handle_client, LISTEN_HOST, LISTEN_PORT)
     addrs = ", ".join(str(sock.getsockname()) for sock in server.sockets)
