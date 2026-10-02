@@ -135,7 +135,6 @@ ALLOWED_DOMAIN_SUFFIXES = (
     ".google",
     ".goog",
     ".google.dev",
-    ".run.app",
     ".openai.com",
     ".anthropic.com",
     ".claude.ai",
@@ -343,10 +342,27 @@ async def handle_client(client_reader: asyncio.StreamReader, client_writer: asyn
     if peer:
         client_ip = peer[0]
 
+    _conn_key = id(client_writer)
     _set_tcp_keepalive(client_writer)
 
     try:
         header_data = bytearray()
+
+        # Check for PROXY protocol v1 line (from HAProxy send-proxy)
+        # Format: PROXY <TCP4/TCP6/UNKNOWN> <src_ip> <dst_ip> <src_port> <dst_port>\r\n
+        first_line = await asyncio.wait_for(client_reader.readline(), timeout=15.0)
+        if not first_line:
+            client_writer.close()
+            return
+
+        if first_line.startswith(b"PROXY "):
+            proxy_parts = first_line.decode("latin-1", errors="replace").strip().split()
+            if len(proxy_parts) >= 3 and proxy_parts[1] in ("TCP4", "TCP6"):
+                client_ip = proxy_parts[2]
+        else:
+            # Direct connection without PROXY protocol
+            header_data.extend(first_line)
+
         while b"\r\n\r\n" not in header_data and len(header_data) < 65536:
             chunk = await asyncio.wait_for(client_reader.read(4096), timeout=15.0)
             if not chunk:

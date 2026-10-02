@@ -111,19 +111,26 @@ frontend ag_proxy_in
 
 backend ag_ssl_backend
     mode tcp
-    server local_ssl 127.0.0.1:50130
+    server local_ssl 127.0.0.1:50130 send-proxy
 
 frontend ag_ssl_terminator
-    bind 127.0.0.1:50130 ssl crt $CONF_DIR/proxy_bundle.pem
+    bind 127.0.0.1:50130 ssl crt $CONF_DIR/proxy_bundle.pem accept-proxy
     mode tcp
     default_backend ag_plain_backend
 
 backend ag_plain_backend
     mode tcp
-    server python_proxy 127.0.0.1:50127
+    server python_proxy 127.0.0.1:50127 send-proxy
 EOF
 
-echo -e "\n${YELLOW}🚀 Step 5: Creating and enabling systemd service...${NC}"
+echo -e "\n${YELLOW}👤 Step 5: Creating isolated unprivileged system user...${NC}"
+if ! id -u antigravity >/dev/null 2>&1; then
+    useradd -r -s /usr/sbin/nologin -d "$INSTALL_DIR" antigravity
+fi
+chown -R antigravity:antigravity "$INSTALL_DIR" "$CONF_DIR"
+chmod 644 "$CONF_DIR/proxy_bundle.pem" 2>/dev/null || true
+
+echo -e "\n${YELLOW}🚀 Step 6: Creating and enabling systemd service...${NC}"
 cat <<EOF > /etc/systemd/system/antigravity-proxy.service
 [Unit]
 Description=Antigravity Zero-Trust Proxy Core
@@ -131,12 +138,14 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=antigravity
+Group=antigravity
 WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=$CONF_DIR/config.env
 ExecStart=/usr/bin/python3 $INSTALL_DIR/proxy.py
 Restart=always
 RestartSec=3
+NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target
