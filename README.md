@@ -36,26 +36,34 @@
 graph TD
     Client["💻 Клиент (confeden/Antigravity / VS Code / JetBrains)"]
     
-    subgraph VPS["VPS (Европа)"]
-        HAProxy["🌐 HAProxy (Порт 50128)<br>Dual-Mode Protocol Sniffer & Anti-DoS"]
-        SSLTerm["🔒 Local SSL Terminator (127.0.0.1:50130)"]
-        Core["⚡ Python Async Proxy Core (127.0.0.1:50127)<br>Zero-Trust Whitelist & Basic Auth"]
+    subgraph VPS["VPS (Европа / США)"]
+        Core["⚡ Antigravity Proxy Core v2.0 (Go Monolith: 50128)<br>• Dual-Mode Peek Sniffer (0x16 TLS vs Plain HTTP)<br>• In-Memory Dynamic TLS Engine<br>• Zero-Trust CIDR & Domain Whitelist<br>• Real-time SQLite WAL Telemetry<br>• Fair-Use Traffic Shaping"]
     end
     
     Google["☁️ Google Cloud Code / Gemini API<br>(daily-cloudcode-pa.googleapis.com)"]
     Blocked["⛔ Неавторизованный хост<br>(YouTube, торренты, сайты)"]
     
-    Client -->|"Plain HTTP CONNECT"| HAProxy
-    Client -->|"Encrypted HTTPS Proxy (TLS)"| HAProxy
-    
-    HAProxy -->|"HTTP"| Core
-    HAProxy -->|"HTTPS (TLS)"| SSLTerm --> Core
+    Client -->|"Plain HTTP CONNECT"| Core
+    Client -->|"Encrypted HTTPS Proxy (TLS)"| Core
     
     Core -->|"✅ Разрешено (Google AI)"| Google
     Core -->|"❌ Запрещено"| Blocked -->|"HTTP 403 Forbidden"| Client
 ```
 
 ---
+
+## 📊 Результаты нагрузочного тестирования (Benchmark: Go vs Python)
+
+Стресс-тестирование на боевом сервере (50 параллельных клиентов, 300 запросов CONNECT с передачей данных к Google Cloud Code):
+
+| Показатель | Python Proxy v1.1.1 | Go Proxy Core v2.0 | Преимущество Go |
+| :--- | :--- | :--- | :--- |
+| **Успешность (Success Rate)** | 100.0% (300/300) | **100.0% (300/300)** | Безупречная стабильность |
+| **Средняя задержка (Avg Latency)** | 683.0 ms | **540.5 ms** | **На 21% быстрее** ⚡ |
+| **Хвостовая задержка p95 (Tail Latency)** | 2075.5 ms | **1426.5 ms** | **На 31% меньше фризов** |
+| **Хвостовая задержка p99** | 2829.9 ms | **2719.6 ms** | Стабильнее под пиками |
+| **Потребление ОЗУ (Memory RSS)** | 38.6 MB (до 130 МБ) | **11.5 MB** | **В 3.3+ раза легче** |
+| **Внешние зависимости** | Python, pip, HAProxy, OpenSSL | **0 (Zero-Dependency)** | 1 статический бинарник |
 
 ## 🚀 Быстрый старт (Установка на свой VPS за 1 минуту)
 
