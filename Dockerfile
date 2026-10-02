@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY proxy.py /app/proxy.py
+COPY proxy.py stats.py /app/
 COPY haproxy.cfg /etc/haproxy/haproxy.cfg
 
 RUN mkdir -p /etc/antigravity-proxy && \

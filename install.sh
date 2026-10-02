@@ -51,7 +51,7 @@ PROXY_LISTEN_HOST=127.0.0.1
 PROXY_LISTEN_PORT=50127
 EOF
 
-# Copy proxy.py
+# Copy proxy.py & stats.py
 if [ -f "proxy.py" ]; then
     cp proxy.py "$INSTALL_DIR/proxy.py"
 else
@@ -59,6 +59,12 @@ else
     curl -sSL -o "$INSTALL_DIR/proxy.py" "https://raw.githubusercontent.com/j46871417-ui/antigravity-proxy/main/proxy.py"
 fi
 chmod +x "$INSTALL_DIR/proxy.py"
+
+if [ -f "stats.py" ]; then
+    cp stats.py "$INSTALL_DIR/stats.py"
+else
+    curl -sSL -o "$INSTALL_DIR/stats.py" "https://raw.githubusercontent.com/j46871417-ui/antigravity-proxy/main/stats.py" || true
+fi
 
 echo -e "\n${YELLOW}🔒 Step 3: Generating SSL certificate for HTTPS Proxy mode...${NC}"
 if [ ! -f "$CONF_DIR/proxy_bundle.pem" ]; then
