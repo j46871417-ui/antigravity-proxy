@@ -1,12 +1,12 @@
-# 🚀 Antigravity Proxy Server
+# 🚀 Antigravity Proxy Server (v2.0 Go Native Engine)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
-[![HAProxy 2.8+](https://img.shields.io/badge/HAProxy-2.8%2B-orange.svg)](https://www.haproxy.org/)
+[![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8.svg?logo=go)](https://go.dev/)
+[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)]()
 [![Docker Ready](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](docker-compose.yml)
 [![Telegram Chat](https://img.shields.io/badge/Telegram-Беседа_сообщества-2CA5E0?logo=telegram)](https://t.me/+8qU7020rMF84OWNi)
 
-Высокоскоростной двухрежимный (Dual-Mode) шлюз-прокси для обхода региональных ограничений и блокировок **Google Antigravity**, **Gemini Code Assist** и **Google Cloud Code**.
+Высокоскоростной двухрежимный (Dual-Mode) монолитный шлюз-прокси на **Go** для обхода региональных ограничений и блокировок **Google Antigravity**, **Gemini Code Assist** и **Google Cloud Code**.
 
 Разработан специально для интеграции с клиентом [confeden/Antigravity](https://github.com/confeden/Antigravity), а также расширениями для **VS Code** и **JetBrains IDE**.
 
@@ -14,20 +14,19 @@
 
 ---
 
-## ⚡ Особенности и преимущества
+## ⚡ Особенности и преимущества (v2.0 Go Engine)
 
-| Особенность | Обычный VPN / Общий прокси | Antigravity Proxy Server |
+| Особенность | Обычный VPN / Python Proxy | Antigravity Proxy v2.0 (Go) |
 | :--- | :--- | :--- |
-| **Ширина канала** | Забивается видео, вкладками, торрентами | **100% отдано только генерации кода** |
-| **Режим входа** | Либо только HTTP, либо только HTTPS | **Двухрежимный (Dual-Mode):** авто-сниффинг HTTP CONNECT и HTTPS Proxy |
-| **Проверка региона** | Часто банится Cloudflare/Google | **Честный европейский выход** (`loc=IT`/`loc=DE` в `/cdn-cgi/trace`) |
+| **Архитектура** | HAProxy + SSL Terminator + Python | **Один статический бинарник (~6 МБ)** без внешних пакетов |
+| **Зависимости** | Python, OpenSSL, HAProxy, bash-скрипты | **Нулевые системные зависимости** (Zero-Dependency) |
+| **Режим входа** | Либо только HTTP, либо только HTTPS | **Двухрежимный (Dual-Mode):** авто-сниффинг через `Peek(1) == 0x16` (TLS vs Plain CONNECT) |
+| **Туннелирование** | Копирование через userspace | **Zero-Copy Splice:** Linux-системный вызов `splice(2)` между сокетами в ядре |
+| **TLS-сертификаты** | Генерация через OpenSSL на диск | **In-Memory TLS:** динамическая генерация ключей и сертификата в RAM |
+| **Аудит и Real IP** | Костыли через PROXY protocol / 127.0.0.1 | **Честный прямой Real Client IP** из сокета без посредников |
 | **Безопасность** | Трафик ходит куда угодно | **Zero-Trust Whitelist:** доступ только к API Google AI, остальное блокируется (403) |
-| **Защита от перегрузки**| Нет лимитов на сессии | **HAProxy Stick-Table:** лимит 30 одновременных сессий на IP от залипаний и DoS |
-| **Контроль трафика** | Аварийный обрыв канала при исчерпании | **Умный Fair-Use и мягкие лимиты:** 0ms задержки для AI-токенов, сглаживание пиков до ~28 Мбит/с, мягкий шейпинг до ~3.5 Мбит/с при превышении квоты (30 ГБ/мес) без разрыва связи |
-| **Производительность** | Медленный парсинг JSON с диска | **In-Memory Cache (mtime):** Мгновенная авторизация из RAM без дисковых задержек event loop |
-| **Аудит и Real IP** | Теряется за реверс-прокси (`127.0.0.1`) | **HAProxy PROXY Protocol v1:** Полное сохранение реального Client IP источника в ядре и логах |
-| **Безопасность демона** | Запуск под `root` | **Least Privilege:** Запуск от изолированного системного пользователя `antigravity` с флагом `NoNewPrivileges` |
-| **Потребление ОЗУ** | 500+ МБ (Xray/Sing-box/Squid) | **Меньше 50 МБ RAM** (асинхронный Python 3 + HAProxy) |
+| **Контроль трафика** | Аварийный обрыв канала при исчерпании | **Умный Fair-Use и мягкие лимиты:** 0ms задержки для AI-токенов |
+| **Потребление ОЗУ** | 50+ МБ (Python + HAProxy) | **~10 МБ RAM** под нагрузкой с сотнями пользователей |
 
 ---
 

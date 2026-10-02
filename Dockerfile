@@ -1,25 +1,20 @@
-FROM python:3.12-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    haproxy \
-    openssl \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Build stage
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
+COPY go.mod ./
+COPY *.go ./
 
-COPY proxy.py stats.py /app/
-COPY haproxy.cfg /etc/haproxy/haproxy.cfg
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o antigravity-proxy .
 
-RUN mkdir -p /etc/antigravity-proxy && \
-    openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout /etc/antigravity-proxy/proxy.key \
-    -out /etc/antigravity-proxy/proxy.crt \
-    -days 3650 \
-    -subj "/CN=antigravity.proxy/O=Antigravity/C=EU" && \
-    cat /etc/antigravity-proxy/proxy.key /etc/antigravity-proxy/proxy.crt > /etc/antigravity-proxy/proxy_bundle.pem && \
-    chmod 600 /etc/antigravity-proxy/proxy_bundle.pem
+# Minimal scratch/alpine final image
+FROM alpine:3.20
+
+RUN apk --no-cache add ca-certificates tzdata
+
+WORKDIR /app
+COPY --from=builder /app/antigravity-proxy /app/antigravity-proxy
 
 EXPOSE 50128
 
-CMD haproxy -f /etc/haproxy/haproxy.cfg -D && python3 /app/proxy.py
+ENTRYPOINT ["/app/antigravity-proxy"]
