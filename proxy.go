@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -29,14 +30,16 @@ type ProxyServer struct {
 	tlsConfig  *tls.Config
 	authMgr    *AuthManager
 	trafficMgr *TrafficManager
+	statsMgr   *StatsManager
 	logLevel   string
 }
 
-func NewProxyServer(tlsConfig *tls.Config, authMgr *AuthManager, trafficMgr *TrafficManager, logLevel string) *ProxyServer {
+func NewProxyServer(tlsConfig *tls.Config, authMgr *AuthManager, trafficMgr *TrafficManager, statsMgr *StatsManager, logLevel string) *ProxyServer {
 	return &ProxyServer{
 		tlsConfig:  tlsConfig,
 		authMgr:    authMgr,
 		trafficMgr: trafficMgr,
+		statsMgr:   statsMgr,
 		logLevel:   strings.ToUpper(logLevel),
 	}
 }
@@ -173,6 +176,7 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 
 	if !s.authMgr.Authenticate(proxyUser, proxyPass) {
 		log.Printf("[AUTH] Unauthorized auth attempt for user '%s' from %s", proxyUser, clientIP)
+		s.statsMgr.Record(proxyUser, "-", 0, "blocked_auth", 0, 0, 0)
 		s.sendAuthRequired(conn)
 		return
 	}
@@ -250,6 +254,7 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 	// Validate against Zero-Trust Whitelist
 	if !IsHostAllowed(targetHost, targetPort) {
 		log.Printf("[BLOCKED] %s@%s tried to access unauthorized host %s:%d", proxyUser, clientIP, targetHost, targetPort)
+		s.statsMgr.Record(proxyUser, targetHost, targetPort, "blocked_whitelist", 0, 0, 0)
 		s.sendForbidden(conn)
 		return
 	}
@@ -261,6 +266,7 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 	upstream, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
 	if err != nil {
 		log.Printf("[ERROR] Failed to connect to %s: %v", targetAddr, err)
+		s.statsMgr.Record(proxyUser, targetHost, targetPort, "error", 0, 0, 0)
 		s.sendError(conn, 502, "Bad Gateway", "Connection failed")
 		return
 	}
@@ -300,6 +306,9 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	var bytesIn, bytesOut int64
+	startTime := time.Now()
+
 	pipe := func(dst io.Writer, src io.Reader, closeWrite func(), isClientToUpstream bool) {
 		defer wg.Done()
 		defer closeWrite()
@@ -307,8 +316,11 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 		buf := make([]byte, 32768)
 		n, _ := io.CopyBuffer(dst, src, buf)
 		if isClientToUpstream {
-			s.trafficMgr.Record(proxyUser, n)
+			atomic.AddInt64(&bytesIn, n)
+		} else {
+			atomic.AddInt64(&bytesOut, n)
 		}
+		s.trafficMgr.Record(proxyUser, n)
 	}
 
 	// Client to Upstream: read from clientReader (which buffers decrypted or plain bytes)
@@ -330,6 +342,13 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 	}, false)
 
 	wg.Wait()
+
+	durationMs := time.Since(startTime).Milliseconds()
+	status := "allowed"
+	if bytesIn > 0 && bytesOut == 0 {
+		status = "timeout_no_data"
+	}
+	s.statsMgr.Record(proxyUser, targetHost, targetPort, status, bytesIn, bytesOut, durationMs)
 }
 
 func (s *ProxyServer) sendAuthRequired(conn net.Conn) {

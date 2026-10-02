@@ -61,10 +61,14 @@ func main() {
 	authMgr := NewAuthManager(usersFile, staticUser, staticPass)
 	trafficMgr := NewTrafficManager(trafficFile, monthlyLimit)
 
+	statsDB := getEnv("STATS_DB", "stats.db")
+	statsLocation := getEnv("STATS_LOCATION", "it")
+	statsMgr := NewStatsManager(statsDB, statsLocation)
+
 	stopCh := make(chan struct{})
 	trafficMgr.StartFlushLoop(stopCh)
 
-	proxyServer := NewProxyServer(tlsConfig, authMgr, trafficMgr, logLevel)
+	proxyServer := NewProxyServer(tlsConfig, authMgr, trafficMgr, statsMgr, logLevel)
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -84,6 +88,7 @@ func main() {
 		close(stopCh)
 		_ = ln.Close()
 		trafficMgr.Flush()
+		statsMgr.Stop()
 		os.Exit(0)
 	}()
 
