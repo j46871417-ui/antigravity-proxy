@@ -175,7 +175,7 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 	proxyUser, proxyPass := creds[0], creds[1]
 
 	if !s.authMgr.Authenticate(proxyUser, proxyPass) {
-		log.Printf("[AUTH] Unauthorized auth attempt for user '%s' from %s", proxyUser, clientIP)
+		log.Printf("[AUTH] Unauthorized auth attempt from %s", clientIP)
 		s.statsMgr.Record(proxyUser, "-", 0, "blocked_auth", 0, 0, 0)
 		s.sendAuthRequired(conn)
 		return
@@ -253,13 +253,13 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 
 	// Validate against Zero-Trust Whitelist
 	if !IsHostAllowed(targetHost, targetPort) {
-		log.Printf("[BLOCKED] %s@%s tried to access unauthorized host %s:%d", proxyUser, clientIP, targetHost, targetPort)
+		log.Printf("[BLOCKED] Unauthorized destination %s:%d from %s", targetHost, targetPort, clientIP)
 		s.statsMgr.Record(proxyUser, targetHost, targetPort, "blocked_whitelist", 0, 0, 0)
 		s.sendForbidden(conn)
 		return
 	}
 
-	log.Printf("[INFO] Allowed %s %s:%d (%s) from %s", method, targetHost, targetPort, proxyUser, clientIP)
+	log.Printf("[INFO] Allowed %s %s:%d from %s", method, targetHost, targetPort, clientIP)
 
 	// Connect upstream
 	targetAddr := net.JoinHostPort(targetHost, strconv.Itoa(targetPort))

@@ -1,7 +1,11 @@
 package main
 
 import (
+	crand "crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -83,6 +87,7 @@ type StatsManager struct {
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
 	enabled  bool
+	anonSalt []byte
 }
 
 func NewStatsManager(dbPath, location string) *StatsManager {
@@ -106,6 +111,11 @@ func NewStatsManager(dbPath, location string) *StatsManager {
 		return &StatsManager{enabled: false}
 	}
 
+	salt := make([]byte, 16)
+	if _, err := crand.Read(salt); err != nil {
+		salt = []byte(fmt.Sprintf("salt-%d", time.Now().UnixNano()))
+	}
+
 	sm := &StatsManager{
 		dbPath:   dbPath,
 		location: location,
@@ -113,13 +123,24 @@ func NewStatsManager(dbPath, location string) *StatsManager {
 		recordCh: make(chan RequestRecord, maxStatsBuffer),
 		stopCh:   make(chan struct{}),
 		enabled:  true,
+		anonSalt: salt,
 	}
 
 	sm.wg.Add(1)
 	go sm.worker()
 
-	log.Printf("[Stats] Telemetry logging active in SQLite: %s (Location: %s)", dbPath, location)
+	log.Printf("[Stats] Telemetry logging active in SQLite: %s (Location: %s, Anonymous Requests: Enabled)", dbPath, location)
 	return sm
+}
+
+func (sm *StatsManager) anonymizeUser(user string) string {
+	if user == "" || user == "-" {
+		return "anon"
+	}
+	h := sha256.New()
+	h.Write(sm.anonSalt)
+	h.Write([]byte(user))
+	return "anon_" + hex.EncodeToString(h.Sum(nil)[:4])
 }
 
 func (sm *StatsManager) Record(user, host string, port int, status string, bytesIn, bytesOut, durationMs int64) {
@@ -135,14 +156,13 @@ func (sm *StatsManager) Record(user, host string, port int, status string, bytes
 	if h == "" {
 		h = "-"
 	}
-	if user == "" {
-		user = "-"
-	}
+
+	anonUser := sm.anonymizeUser(user)
 
 	rec := RequestRecord{
 		Ts:         time.Now().Unix(),
 		Location:   sm.location,
-		UserName:   user,
+		UserName:   anonUser,
 		Host:       h,
 		Port:       port,
 		Status:     status,
