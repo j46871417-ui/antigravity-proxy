@@ -35,12 +35,20 @@ INSTALL_DIR="/opt/antigravity-proxy"
 CONF_DIR="/etc/antigravity-proxy"
 mkdir -p "$INSTALL_DIR" "$CONF_DIR"
 
+# Keep an operator-owned HAProxy configuration recoverable for uninstall.
+INSTALL_BACKUP_DIR="/var/backups/antigravity-proxy/install"
+mkdir -p "$INSTALL_BACKUP_DIR"
+chmod 700 "$INSTALL_BACKUP_DIR"
+if [ -f /etc/haproxy/haproxy.cfg ]; then
+    cp -a /etc/haproxy/haproxy.cfg "$INSTALL_BACKUP_DIR/haproxy.cfg"
+fi
+
 # Generate random credentials if not provided
 if [ -z "$PROXY_USER" ]; then
     PROXY_USER="ag_user"
 fi
 if [ -z "$PROXY_PASS" ]; then
-    PROXY_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
+PROXY_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24)
 fi
 
 echo -e "\n${YELLOW}⚙️ Step 2: Setting up configuration and credentials...${NC}"
@@ -128,7 +136,9 @@ if ! id -u antigravity >/dev/null 2>&1; then
     useradd -r -s /usr/sbin/nologin -d "$INSTALL_DIR" antigravity
 fi
 chown -R antigravity:antigravity "$INSTALL_DIR" "$CONF_DIR"
-chmod 644 "$CONF_DIR/proxy_bundle.pem" 2>/dev/null || true
+chmod 640 "$CONF_DIR/proxy_bundle.pem" 2>/dev/null || true
+chown root:haproxy "$CONF_DIR/proxy_bundle.pem" 2>/dev/null || true
+chmod 640 "$CONF_DIR/config.env"
 
 echo -e "\n${YELLOW}🚀 Step 6: Creating and enabling systemd service...${NC}"
 cat <<EOF > /etc/systemd/system/antigravity-proxy.service

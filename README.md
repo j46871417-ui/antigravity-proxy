@@ -162,6 +162,17 @@ cd antigravity-proxy
 docker compose up -d --build
 ```
 
+Удаление systemd-установки с резервной копией конфигурации:
+
+```bash
+sudo bash uninstall.sh --yes
+```
+
+Скрипт останавливает только `antigravity-proxy.service`, убирает файлы
+этой установки и сохраняет конфигурацию в `/var/backups/antigravity-proxy`.
+Общие пакеты HAProxy, Python и OpenSSL не удаляются. Для Compose сначала
+выполните `docker compose down`, затем удалите проектные файлы.
+
 ---
 
 ## 💻 Подключение в клиенте Antigravity

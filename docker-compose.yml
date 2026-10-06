@@ -8,6 +8,6 @@ services:
     ports:
       - "50128:50128"
     environment:
-      - PROXY_USER=antigravity
-      - PROXY_PASS=ChangeMeSecret123
+      - PROXY_USER=${PROXY_USER:?Set PROXY_USER in .env}
+      - PROXY_PASS=${PROXY_PASS:?Set PROXY_PASS in .env}
       - LOG_LEVEL=INFO
