@@ -43,21 +43,59 @@ if [ -f /etc/haproxy/haproxy.cfg ]; then
     cp -a /etc/haproxy/haproxy.cfg "$INSTALL_BACKUP_DIR/haproxy.cfg"
 fi
 
-# Generate random credentials if not provided
-if [ -z "$PROXY_USER" ]; then
-    PROXY_USER="ag_user"
-fi
-if [ -z "$PROXY_PASS" ]; then
-PROXY_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24)
-fi
+# Reuse installed credentials unless the operator explicitly supplies replacements.
+# Read data without sourcing an environment file as root.
+read_config_value() {
+    python3 - "$CONF_DIR/config.env" "$1" <<'PY'
+import pathlib
+import shlex
+import sys
+
+path = pathlib.Path(sys.argv[1])
+value = ""
+if path.exists():
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, separator, candidate = line.partition("=")
+        if separator and key.strip() == sys.argv[2]:
+            value = candidate.strip()
+            if value.startswith(('"', "'")):
+                words = shlex.split(value)
+                if len(words) != 1:
+                    raise SystemExit("Invalid quoted credential in config.env")
+                value = words[0]
+print(value)
+PY
+}
+
+PROXY_USER=${PROXY_USER:-$(read_config_value PROXY_USER)}
+PROXY_PASS=${PROXY_PASS:-$(read_config_value PROXY_PASS)}
+PROXY_USER=${PROXY_USER:-ag_user}
+PROXY_PASS=${PROXY_PASS:-$(openssl rand -hex 12)}
 
 echo -e "\n${YELLOW}⚙️ Step 2: Setting up configuration and credentials...${NC}"
-cat <<EOF > "$CONF_DIR/config.env"
-PROXY_USER=$PROXY_USER
-PROXY_PASS=$PROXY_PASS
-PROXY_LISTEN_HOST=127.0.0.1
-PROXY_LISTEN_PORT=50127
-EOF
+(
+    umask 077
+    PROXY_USER="$PROXY_USER" PROXY_PASS="$PROXY_PASS" python3 - "$CONF_DIR/config.env" <<'PY'
+import json
+import os
+import pathlib
+import sys
+
+user, password = os.environ["PROXY_USER"], os.environ["PROXY_PASS"]
+if ":" in user or any(ord(c) < 32 or ord(c) == 127 for c in user + password):
+    raise SystemExit("Credentials cannot contain control characters or a colon in the login")
+lines = [
+    "PROXY_USER=" + json.dumps(user, ensure_ascii=False),
+    "PROXY_PASS=" + json.dumps(password, ensure_ascii=False),
+    "PROXY_LISTEN_HOST=127.0.0.1",
+    "PROXY_LISTEN_PORT=50127",
+]
+pathlib.Path(sys.argv[1]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+)
+# Print and check the persisted values, rather than a separate generated password.
+PROXY_USER=$(read_config_value PROXY_USER)
+PROXY_PASS=$(read_config_value PROXY_PASS)
 
 # Copy proxy.py & stats.py
 if [ -f "proxy.py" ]; then
@@ -162,8 +200,38 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
+systemctl enable antigravity-proxy.service
+# enable --now does not reload credentials in an already running service.
+systemctl restart antigravity-proxy.service
 systemctl restart haproxy
-systemctl enable --now antigravity-proxy.service
+
+# Authentication happens before destination validation. A forbidden destination
+# checks the saved credentials without relying on an external website or DNS.
+PROXY_USER="$PROXY_USER" PROXY_PASS="$PROXY_PASS" python3 - <<'PY'
+import base64
+import http.client
+import os
+import time
+
+credentials = (os.environ["PROXY_USER"] + ":" + os.environ["PROXY_PASS"]).encode("utf-8")
+headers = {"Proxy-Authorization": "Basic " + base64.b64encode(credentials).decode("ascii")}
+for attempt in range(20):
+    connection = http.client.HTTPConnection("127.0.0.1", 50127, timeout=1)
+    try:
+        connection.request("CONNECT", "installer-check.invalid:1", headers=headers)
+        response = connection.getresponse()
+        if response.status == 403 and b"Access Denied: unauthorized host" in response.read():
+            break
+        if response.status == 407:
+            raise SystemExit("Saved proxy credentials were rejected; installation is not verified")
+        raise SystemExit("Unexpected proxy response; installation is not verified")
+    except (OSError, http.client.HTTPException):
+        if attempt == 19:
+            raise SystemExit("Proxy did not become ready; installation is not verified")
+        time.sleep(0.25)
+    finally:
+        connection.close()
+PY
 
 echo -e "\n${GREEN}====================================================${NC}"
 echo -e "${GREEN}   🎉 Antigravity Proxy Successfully Installed!     ${NC}"
@@ -172,12 +240,20 @@ echo -e "\n📋 ${YELLOW}Connection Details:${NC}"
 echo -e "• Type:     ${BLUE}HTTPS / HTTP CONNECT (Dual-Mode)${NC}"
 echo -e "• Server:   ${BLUE}$SERVER_IP${NC}"
 echo -e "• Port:     ${BLUE}50128${NC}"
-echo -e "• Login:    ${BLUE}$PROXY_USER${NC}"
-echo -e "• Password: ${BLUE}$PROXY_PASS${NC}"
+printf '• Login:    %b%s%b\n' "$BLUE" "$PROXY_USER" "$NC"
+printf '• Password: %b%s%b\n' "$BLUE" "$PROXY_PASS" "$NC"
 
-PROXY_URL="https://$PROXY_USER:$PROXY_PASS@$SERVER_IP:50128"
+PROXY_URL=$(PROXY_USER="$PROXY_USER" PROXY_PASS="$PROXY_PASS" SERVER_IP="$SERVER_IP" python3 - <<'PY'
+import os
+from urllib.parse import quote
+
+user = quote(os.environ["PROXY_USER"], safe="")
+password = quote(os.environ["PROXY_PASS"], safe="")
+print("https://" + user + ":" + password + "@" + os.environ["SERVER_IP"] + ":50128")
+PY
+)
 echo -e "\n📌 ${GREEN}Antigravity Connection String:${NC}"
-echo -e "${YELLOW}$PROXY_URL${NC}"
+printf '%b%s%b\n' "$YELLOW" "$PROXY_URL" "$NC"
 
 echo -e "\n💡 ${BLUE}How to use:${NC}"
 echo -e "1. Launch Antigravity.exe"

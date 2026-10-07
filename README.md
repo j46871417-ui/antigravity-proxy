@@ -73,6 +73,23 @@ graph TD
 curl -sSL https://raw.githubusercontent.com/j46871417-ui/antigravity-proxy/main/install.sh | bash
 ```
 
+Повторная установка сохраняет логин и пароль из `/etc/antigravity-proxy/config.env`.
+Чтобы явно заменить их, передайте `PROXY_USER` и/или `PROXY_PASS` в окружении
+процесса `bash`. Например, после скачивания `install.sh`:
+
+```bash
+PROXY_USER=ag_user PROXY_PASS='your-new-password' bash install.sh
+```
+
+Установщик перезапускает службу после записи конфигурации и проверяет авторизацию
+до вывода данных подключения. Логин и пароль в строке URL кодируются автоматически,
+поэтому символы `@`, `:`, `/` и другие специальные символы не ломают адрес.
+Проверки установщика можно запустить на Linux без root:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
 Скрипт автоматически:
 1. Установит HAProxy, Python 3 и OpenSSL.
 2. Сгенерирует локальный сертификат для режима HTTPS-прокси.
