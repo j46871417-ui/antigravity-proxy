@@ -11,3 +11,4 @@ services:
       - PROXY_USER=${PROXY_USER:?Set PROXY_USER in .env}
       - PROXY_PASS=${PROXY_PASS:?Set PROXY_PASS in .env}
       - LOG_LEVEL=INFO
+      - PROXY_BYPASS_MODE=${PROXY_BYPASS_MODE:-strict}

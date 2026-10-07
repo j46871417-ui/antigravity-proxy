@@ -12,6 +12,7 @@ import os
 import sys
 import json
 import ipaddress
+import re
 import socket
 import urllib.parse
 from datetime import datetime
@@ -142,6 +143,13 @@ ALLOWED_DOMAIN_SUFFIXES = (
 
 ALLOWED_PORTS = {80, 443, 5228}
 
+# `strict` preserves the zero-trust whitelist. Set `PROXY_BYPASS_MODE=direct`
+# to allow public hostnames on ALLOWED_PORTS; private and local destinations
+# are still rejected before connecting.
+BYPASS_MODE = os.getenv("PROXY_BYPASS_MODE", "strict").strip().lower()
+DIRECT_MODES = {"direct", "bypass", "allow"}
+HOSTNAME_RE = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\.?$", re.IGNORECASE)
+
 # Known Google IP subnets (AS15169 & Google Cloud / Cloud Run) for clients resolving DNS locally
 GOOGLE_IP_NETWORKS = [
     # Legacy AS15169 subnets
@@ -232,7 +240,40 @@ def is_host_allowed(host: str, port: int) -> bool:
     if h and (h[0].isdigit() or ':' in h):
         if is_google_ip(h):
             return True
+    if BYPASS_MODE in DIRECT_MODES:
+        # Do not accept localhost, single-label names, malformed names, or
+        # arbitrary IPs here. DNS results are checked again before connect.
+        try:
+            return ipaddress.ip_address(h).is_global
+        except ValueError:
+            return bool(HOSTNAME_RE.fullmatch(h))
     return False
+
+
+async def open_remote_connection(host: str, port: int):
+    """Connect to a public address and prevent private-IP DNS rebinding."""
+    if BYPASS_MODE not in DIRECT_MODES:
+        return await asyncio.open_connection(host, port)
+
+    loop = asyncio.get_running_loop()
+    addresses = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    public = []
+    for _family, _socktype, _proto, _canonname, sockaddr in addresses:
+        try:
+            address = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            continue
+        if address.is_global:
+            public.append(sockaddr[0])
+    if not public:
+        raise PermissionError("destination resolved only to a private or reserved address")
+    last_error = None
+    for address in dict.fromkeys(public):
+        try:
+            return await asyncio.open_connection(address, port)
+        except OSError as exc:
+            last_error = exc
+    raise last_error or OSError("no public destination address accepted")
 
 
 USER_TRAFFIC_FILE = os.getenv("USER_TRAFFIC_FILE", "/opt/antigravity_proxy/user_traffic.json")
@@ -490,7 +531,7 @@ async def handle_client(client_reader: asyncio.StreamReader, client_writer: asyn
         # Open upstream connection
         try:
             remote_reader, remote_writer = await asyncio.wait_for(
-                asyncio.open_connection(host_str, port),
+                open_remote_connection(host_str, port),
                 timeout=12.0
             )
         except Exception as e:
