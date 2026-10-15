@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -105,32 +108,131 @@ func IsGoogleIP(ipStr string) bool {
 	return false
 }
 
+var directBypass = func() bool {
+	switch strings.ToLower(strings.TrimSpace(getEnv("PROXY_BYPASS_MODE", "strict"))) {
+	case "direct", "bypass", "allow":
+		return true
+	default:
+		return false
+	}
+}()
+
+var nonPublicNetworks = func() []*net.IPNet {
+	cidrs := []string{
+		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+		"169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24",
+		"192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24",
+		"203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
+		"2001::/23", "2001:db8::/32", "2002::/16",
+	}
+	var networks []*net.IPNet
+	for _, cidr := range cidrs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err == nil {
+			networks = append(networks, network)
+		}
+	}
+	return networks
+}()
+
+func isPublicIP(ip net.IP) bool {
+	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() ||
+		!ip.IsGlobalUnicast() {
+		return false
+	}
+	for _, network := range nonPublicNetworks {
+		if network.Contains(ip) {
+			return false
+		}
+	}
+	if ip.To4() == nil && !ip.Mask(net.CIDRMask(3, 128)).Equal(net.ParseIP("2000::")) {
+		return false
+	}
+	return true
+}
+
+func isValidDirectHostname(host string) bool {
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+	labels := strings.Split(strings.TrimSuffix(strings.ToLower(host), "."), ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+				return false
+			}
+		}
+	}
+	tld := labels[len(labels)-1]
+	if len(tld) < 2 {
+		return false
+	}
+	for _, r := range tld {
+		if r < 'a' || r > 'z' {
+			return false
+		}
+	}
+	return true
+}
+
+// ResolveDirectTargets resolves once and pins connections to public IPs to prevent DNS rebinding.
+func ResolveDirectTargets(host string, port int) ([]string, error) {
+	if _, ok := allowedPorts[port]; !ok {
+		return nil, fmt.Errorf("destination port is not allowed")
+	}
+	h := strings.Trim(strings.TrimSpace(host), "[]")
+	if ip := net.ParseIP(h); ip != nil {
+		if !isPublicIP(ip) {
+			return nil, fmt.Errorf("destination IP is not public")
+		}
+		return []string{net.JoinHostPort(ip.String(), strconv.Itoa(port))}, nil
+	}
+	if !isValidDirectHostname(h) {
+		return nil, fmt.Errorf("invalid destination hostname")
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(context.Background(), h)
+	if err != nil || len(ips) == 0 {
+		return nil, fmt.Errorf("destination did not resolve to public IP addresses")
+	}
+	addrs := make([]string, 0, len(ips))
+	for _, result := range ips {
+		if !isPublicIP(result.IP) {
+			return nil, fmt.Errorf("DNS response contains a non-public IP address")
+		}
+		addrs = append(addrs, net.JoinHostPort(result.IP.String(), strconv.Itoa(port)))
+	}
+	return addrs, nil
+}
+
 // IsHostAllowed validates the target host and port against Zero-Trust policies.
 func IsHostAllowed(host string, port int) bool {
 	if _, ok := allowedPorts[port]; !ok {
 		return false
 	}
-
-	h := strings.ToLower(strings.TrimSpace(host))
-	h = strings.TrimSuffix(h, ".")
-	h = strings.Trim(h, "[]")
-
+	h := strings.ToLower(strings.TrimSuffix(strings.Trim(strings.TrimSpace(host), "[]"), "."))
 	if _, ok := allowedExactHosts[h]; ok {
 		return true
 	}
-
 	for _, suffix := range allowedDomainSuffixes {
 		if h == strings.TrimPrefix(suffix, ".") || strings.HasSuffix(h, suffix) {
 			return true
 		}
 	}
-
-	// Check if target is an IP address
-	if len(h) > 0 && (h[0] >= '0' && h[0] <= '9' || strings.Contains(h, ":")) {
-		if IsGoogleIP(h) {
-			return true
-		}
+	if ip := net.ParseIP(h); ip != nil && IsGoogleIP(h) {
+		return true
 	}
-
+	if directBypass {
+		if ip := net.ParseIP(h); ip != nil {
+			return isPublicIP(ip)
+		}
+		return isValidDirectHostname(h)
+	}
 	return false
 }
