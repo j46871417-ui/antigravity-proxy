@@ -113,6 +113,13 @@ STATS_DB="${STATS_DB:-$(read_config_value STATS_DB)}"
 STATS_DB="${STATS_DB:-$INSTALL_DIR/stats.db}"
 STATS_LOCATION="${STATS_LOCATION:-$(read_config_value STATS_LOCATION)}"
 STATS_LOCATION="${STATS_LOCATION:-it}"
+PROXY_BYPASS_MODE="${PROXY_BYPASS_MODE:-$(read_config_value PROXY_BYPASS_MODE)}"
+PROXY_BYPASS_MODE="${PROXY_BYPASS_MODE:-strict}"
+case "${PROXY_BYPASS_MODE,,}" in
+    strict) PROXY_BYPASS_MODE="strict" ;;
+    direct|bypass|allow) PROXY_BYPASS_MODE="direct" ;;
+    *) echo "PROXY_BYPASS_MODE must be strict or direct." >&2; exit 1 ;;
+esac
 SERVER_IP="$(curl -fsS4 --max-time 5 https://api.ipify.org || echo YOUR_SERVER_IP)"
 
 if ! id -u antigravity >/dev/null 2>&1; then
@@ -120,7 +127,7 @@ if ! id -u antigravity >/dev/null 2>&1; then
 fi
 
 CONFIG_TMP="$WORK_DIR/config.env"
-PROXY_USER="$PROXY_USER" PROXY_PASS="$PROXY_PASS" USERS_FILE="$USERS_FILE" USER_TRAFFIC_FILE="$USER_TRAFFIC_FILE" STATS_DB="$STATS_DB" STATS_LOCATION="$STATS_LOCATION" python3 - "$CONFIG_FILE" "$CONFIG_TMP" <<'PY'
+PROXY_USER="$PROXY_USER" PROXY_PASS="$PROXY_PASS" USERS_FILE="$USERS_FILE" USER_TRAFFIC_FILE="$USER_TRAFFIC_FILE" STATS_DB="$STATS_DB" STATS_LOCATION="$STATS_LOCATION" PROXY_BYPASS_MODE="$PROXY_BYPASS_MODE" python3 - "$CONFIG_FILE" "$CONFIG_TMP" <<'PY'
 import json
 import os
 import pathlib
@@ -128,7 +135,7 @@ import sys
 
 path, output = map(pathlib.Path, sys.argv[1:])
 managed = {"PROXY_USER", "PROXY_PASS", "PROXY_HOST", "PROXY_PORT", "USERS_FILE",
-           "USER_TRAFFIC_FILE", "STATS_DB", "STATS_LOCATION"}
+           "USER_TRAFFIC_FILE", "STATS_DB", "STATS_LOCATION", "PROXY_BYPASS_MODE"}
 lines = []
 if path.exists():
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -144,6 +151,7 @@ lines.extend([
     "USER_TRAFFIC_FILE=" + os.environ["USER_TRAFFIC_FILE"],
     "STATS_DB=" + os.environ["STATS_DB"],
     "STATS_LOCATION=" + os.environ["STATS_LOCATION"],
+    "PROXY_BYPASS_MODE=" + os.environ["PROXY_BYPASS_MODE"],
 ])
 output.write_text("\n".join(lines) + "\n", encoding="utf-8")
 PY
