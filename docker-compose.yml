@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   antigravity-proxy:
     build: .
@@ -8,7 +6,14 @@ services:
     ports:
       - "50128:50128"
     environment:
-      - PROXY_USER=${PROXY_USER:?Set PROXY_USER in .env}
-      - PROXY_PASS=${PROXY_PASS:?Set PROXY_PASS in .env}
-      - LOG_LEVEL=INFO
-      - PROXY_BYPASS_MODE=${PROXY_BYPASS_MODE:-strict}
+      PROXY_HOST: 0.0.0.0
+      PROXY_PORT: 50128
+      PROXY_USER: ${PROXY_USER:?Set PROXY_USER in .env}
+      PROXY_PASS: ${PROXY_PASS:?Set PROXY_PASS in .env}
+      USERS_FILE: /data/users.json
+      USER_TRAFFIC_FILE: /data/user_traffic.json
+      STATS_DB: /data/stats.db
+      STATS_LOCATION: ${STATS_LOCATION:-it}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/data
