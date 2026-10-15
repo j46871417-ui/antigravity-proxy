@@ -28,6 +28,14 @@ func getEnvInt64(key string, defaultVal int64) int64 {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "users" {
+		if err := runUsersCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(2)
+		}
+		return
+	}
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmsgprefix)
 	log.SetPrefix("[Antigravity] ")
 
