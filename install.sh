@@ -23,7 +23,7 @@ mkdir -p "$INSTALL_DIR" "$CONF_DIR" "$BACKUP_DIR"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 if systemctl is-active --quiet haproxy; then HAD_HAPROXY=1; fi
-for file in "$CONFIG_FILE" /etc/systemd/system/antigravity-proxy.service /opt/antigravity-proxy/antigravity-proxy; do
+for file in "$CONFIG_FILE" /etc/systemd/system/antigravity-proxy.service "$INSTALL_DIR/antigravity-proxy"; do
     if [ -e "$file" ]; then
         cp -a "$file" "$BACKUP_DIR/"
     fi
@@ -31,7 +31,29 @@ done
 echo "Backup: $BACKUP_DIR"
 
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl tar gzip
+apt-get install -y -qq ca-certificates curl python3 tar gzip
+
+read_config_value() {
+    python3 - "$CONFIG_FILE" "$1" <<'PY'
+import pathlib
+import shlex
+import sys
+
+path = pathlib.Path(sys.argv[1])
+value = ""
+if path.exists():
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, separator, candidate = line.partition("=")
+        if separator and key.strip() == sys.argv[2]:
+            value = candidate.strip()
+            if value.startswith(('"', "'")):
+                words = shlex.split(value)
+                if len(words) != 1:
+                    raise SystemExit("Invalid quoted value in config.env")
+                value = words[0]
+print(value)
+PY
+}
 
 GO_BIN="$(command -v go || true)"
 GO_OK=0
@@ -72,20 +94,16 @@ curl -fsSL "$REPO/archive/refs/heads/main.tar.gz" | tar -xz --strip-components=1
     GOTOOLCHAIN=local "$GO_BIN" build -trimpath -ldflags="-s -w" -o "$WORK_DIR/antigravity-proxy" .
 )
 
-read_config_value() {
-    local key="$1"
-    if [ -f "$CONFIG_FILE" ]; then
-        sed -n "s/^$key=//p" "$CONFIG_FILE" | head -n1
-    fi
-}
 PROXY_USER="${PROXY_USER:-$(read_config_value PROXY_USER)}"
 PROXY_PASS="${PROXY_PASS:-$(read_config_value PROXY_PASS)}"
 PROXY_USER="${PROXY_USER:-ag_user}"
 PROXY_PASS="${PROXY_PASS:-$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')}"
-if [[ ! "$PROXY_USER" =~ ^[A-Za-z0-9._-]+$ ]] || [[ ! "$PROXY_PASS" =~ ^[A-Za-z0-9._~-]+$ ]]; then
-    echo "PROXY_USER/PROXY_PASS must use URL-safe characters (letters, digits, . _ ~ -)." >&2
-    exit 1
-fi
+PROXY_USER="$PROXY_USER" PROXY_PASS="$PROXY_PASS" python3 - <<'PY'
+import os
+user, password = os.environ["PROXY_USER"], os.environ["PROXY_PASS"]
+if ":" in user or any(ord(char) < 32 or ord(char) == 127 for char in user + password):
+    raise SystemExit("Credentials cannot contain control characters or a colon in the login")
+PY
 
 USERS_FILE="${USERS_FILE:-$(read_config_value USERS_FILE)}"
 USERS_FILE="${USERS_FILE:-$INSTALL_DIR/users.json}"
@@ -102,26 +120,43 @@ if ! id -u antigravity >/dev/null 2>&1; then
 fi
 
 CONFIG_TMP="$WORK_DIR/config.env"
-if [ -f "$CONFIG_FILE" ]; then
-    grep -Ev '^(PROXY_USER|PROXY_PASS|PROXY_HOST|PROXY_PORT|USERS_FILE|USER_TRAFFIC_FILE|STATS_DB|STATS_LOCATION)=' "$CONFIG_FILE" > "$CONFIG_TMP" || true
-else
-    : > "$CONFIG_TMP"
-fi
-cat >> "$CONFIG_TMP" <<EOF
-PROXY_USER=$PROXY_USER
-PROXY_PASS=$PROXY_PASS
-PROXY_HOST=0.0.0.0
-PROXY_PORT=50128
-USERS_FILE=$USERS_FILE
-USER_TRAFFIC_FILE=$USER_TRAFFIC_FILE
-STATS_DB=$STATS_DB
-STATS_LOCATION=$STATS_LOCATION
-EOF
+PROXY_USER="$PROXY_USER" PROXY_PASS="$PROXY_PASS" USERS_FILE="$USERS_FILE" USER_TRAFFIC_FILE="$USER_TRAFFIC_FILE" STATS_DB="$STATS_DB" STATS_LOCATION="$STATS_LOCATION" python3 - "$CONFIG_FILE" "$CONFIG_TMP" <<'PY'
+import json
+import os
+import pathlib
+import sys
+
+path, output = map(pathlib.Path, sys.argv[1:])
+managed = {"PROXY_USER", "PROXY_PASS", "PROXY_HOST", "PROXY_PORT", "USERS_FILE",
+           "USER_TRAFFIC_FILE", "STATS_DB", "STATS_LOCATION"}
+lines = []
+if path.exists():
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, separator, _ = line.partition("=")
+        if not separator or key.strip() not in managed:
+            lines.append(line)
+lines.extend([
+    "PROXY_USER=" + json.dumps(os.environ["PROXY_USER"], ensure_ascii=False),
+    "PROXY_PASS=" + json.dumps(os.environ["PROXY_PASS"], ensure_ascii=False),
+    "PROXY_HOST=0.0.0.0",
+    "PROXY_PORT=50128",
+    "USERS_FILE=" + os.environ["USERS_FILE"],
+    "USER_TRAFFIC_FILE=" + os.environ["USER_TRAFFIC_FILE"],
+    "STATS_DB=" + os.environ["STATS_DB"],
+    "STATS_LOCATION=" + os.environ["STATS_LOCATION"],
+])
+output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
 install -o root -g antigravity -m 0640 "$CONFIG_TMP" "$CONFIG_FILE"
 install -o antigravity -g antigravity -m 0750 "$WORK_DIR/antigravity-proxy" "$INSTALL_DIR/antigravity-proxy"
+mkdir -p "$(dirname "$USERS_FILE")"
 touch "$USERS_FILE"
-chown antigravity:antigravity "$USERS_FILE" "$INSTALL_DIR"
+chown antigravity:antigravity "$USERS_FILE"
 chmod 0600 "$USERS_FILE"
+for data_file in "$USER_TRAFFIC_FILE" "$STATS_DB"; do
+    mkdir -p "$(dirname "$data_file")"
+    if [ -e "$data_file" ]; then chown antigravity:antigravity "$data_file"; fi
+done
 chown antigravity:antigravity "$INSTALL_DIR" "$CONF_DIR"
 chmod 0750 "$INSTALL_DIR"
 
@@ -164,7 +199,14 @@ echo "Antigravity Proxy v2 Go engine is active."
 echo "Server: $SERVER_IP  Port: 50128"
 echo "Login: $PROXY_USER"
 echo "Password: $PROXY_PASS"
-echo "HTTPS proxy: https://$PROXY_USER:$PROXY_PASS@$SERVER_IP:50128"
+PROXY_USER="$PROXY_USER" PROXY_PASS="$PROXY_PASS" SERVER_IP="$SERVER_IP" python3 - <<'PY'
+import os
+from urllib.parse import quote
+
+user = quote(os.environ["PROXY_USER"], safe="")
+password = quote(os.environ["PROXY_PASS"], safe="")
+print("HTTPS proxy: https://" + user + ":" + password + "@" + os.environ["SERVER_IP"] + ":50128")
+PY
 echo "Generate additional accounts with:"
 echo "  sudo -u antigravity $INSTALL_DIR/antigravity-proxy users generate --host $SERVER_IP --count 1"
 echo "Backup: $BACKUP_DIR"
