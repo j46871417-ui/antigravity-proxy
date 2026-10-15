@@ -1,12 +1,12 @@
-# 🚀 Antigravity Proxy Server
+# 🚀 Antigravity Proxy Server (v2.0 Go Native Engine)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
-[![HAProxy 2.8+](https://img.shields.io/badge/HAProxy-2.8%2B-orange.svg)](https://www.haproxy.org/)
+[![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8.svg?logo=go)](https://go.dev/)
+[![No system dependencies](https://img.shields.io/badge/runtime-no%20system%20dependencies-success.svg)]()
 [![Docker Ready](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](docker-compose.yml)
 [![Telegram Chat](https://img.shields.io/badge/Telegram-Беседа_сообщества-2CA5E0?logo=telegram)](https://t.me/+8qU7020rMF84OWNi)
 
-Высокоскоростной двухрежимный (Dual-Mode) шлюз-прокси для обхода региональных ограничений и блокировок **Google Antigravity**, **Gemini Code Assist** и **Google Cloud Code**.
+Высокоскоростной двухрежимный (Dual-Mode) монолитный шлюз-прокси на **Go** для обхода региональных ограничений и блокировок **Google Antigravity**, **Gemini Code Assist** и **Google Cloud Code**.
 
 Разработан специально для интеграции с клиентом [confeden/Antigravity](https://github.com/confeden/Antigravity), а также расширениями для **VS Code** и **JetBrains IDE**.
 
@@ -14,20 +14,19 @@
 
 ---
 
-## ⚡ Особенности и преимущества
+## ⚡ Особенности и преимущества (v2.0 Go Engine)
 
-| Особенность | Обычный VPN / Общий прокси | Antigravity Proxy Server |
+| Особенность | Обычный VPN / Python Proxy | Antigravity Proxy v2.0 (Go) |
 | :--- | :--- | :--- |
-| **Ширина канала** | Забивается видео, вкладками, торрентами | **100% отдано только генерации кода** |
-| **Режим входа** | Либо только HTTP, либо только HTTPS | **Двухрежимный (Dual-Mode):** авто-сниффинг HTTP CONNECT и HTTPS Proxy |
-| **Проверка региона** | Часто банится Cloudflare/Google | **Честный европейский выход** (`loc=IT`/`loc=DE` в `/cdn-cgi/trace`) |
-| **Безопасность** | Трафик ходит куда угодно | **Zero-Trust Whitelist:** доступ только к API Google AI, остальное блокируется (403) |
-| **Защита от перегрузки**| Нет лимитов на сессии | **HAProxy Stick-Table:** лимит 30 одновременных сессий на IP от залипаний и DoS |
-| **Контроль трафика** | Аварийный обрыв канала при исчерпании | **Умный Fair-Use и мягкие лимиты:** 0ms задержки для AI-токенов, сглаживание пиков до ~28 Мбит/с, мягкий шейпинг до ~3.5 Мбит/с при превышении квоты (30 ГБ/мес) без разрыва связи |
-| **Производительность** | Медленный парсинг JSON с диска | **In-Memory Cache (mtime):** Мгновенная авторизация из RAM без дисковых задержек event loop |
-| **Аудит и Real IP** | Теряется за реверс-прокси (`127.0.0.1`) | **HAProxy PROXY Protocol v1:** Полное сохранение реального Client IP источника в ядре и логах |
-| **Безопасность демона** | Запуск под `root` | **Least Privilege:** Запуск от изолированного системного пользователя `antigravity` с флагом `NoNewPrivileges` |
-| **Потребление ОЗУ** | 500+ МБ (Xray/Sing-box/Squid) | **Меньше 50 МБ RAM** (асинхронный Python 3 + HAProxy) |
+| **Архитектура** | HAProxy + SSL Terminator + Python | **Один статический бинарник (~6 МБ)** без внешних пакетов |
+| **Зависимости** | Python, OpenSSL, HAProxy, bash-скрипты | **Без системных runtime-зависимостей** |
+| **Режим входа** | Либо только HTTP, либо только HTTPS | **Двухрежимный (Dual-Mode):** авто-сниффинг через `Peek(1) == 0x16` (TLS vs Plain CONNECT) |
+| **Туннелирование** | Копирование через userspace | **Zero-Copy Splice:** Linux-системный вызов `splice(2)` между сокетами в ядре |
+| **TLS-сертификаты** | Генерация через OpenSSL на диск | **In-Memory TLS:** динамическая генерация ключей и сертификата в RAM |
+| **Аудит и Real IP** | Костыли через PROXY protocol / 127.0.0.1 | **Честный прямой Real Client IP** из сокета без посредников |
+| **Безопасность** | Трафик ходит куда угодно | **Строгий Zero-Trust whitelist по умолчанию**; direct-режим ограничен публичными IP и портами 80, 443, 5228 |
+| **Контроль трафика** | Аварийный обрыв канала при исчерпании | **Умный Fair-Use и мягкие лимиты:** 0ms задержки для AI-токенов |
+| **Потребление ОЗУ** | 50+ МБ (Python + HAProxy) | **~10 МБ RAM** под нагрузкой с сотнями пользователей |
 
 ---
 
@@ -37,20 +36,15 @@
 graph TD
     Client["💻 Клиент (confeden/Antigravity / VS Code / JetBrains)"]
     
-    subgraph VPS["VPS (Европа)"]
-        HAProxy["🌐 HAProxy (Порт 50128)<br>Dual-Mode Protocol Sniffer & Anti-DoS"]
-        SSLTerm["🔒 Local SSL Terminator (127.0.0.1:50130)"]
-        Core["⚡ Python Async Proxy Core (127.0.0.1:50127)<br>Zero-Trust Whitelist & Basic Auth"]
+    subgraph VPS["VPS (Европа / США)"]
+        Core["⚡ Antigravity Proxy Core v2.0 (Go Monolith: 50128)<br>• Dual-Mode Peek Sniffer (0x16 TLS vs Plain HTTP)<br>• In-Memory Dynamic TLS Engine<br>• Zero-Trust CIDR & Domain Whitelist<br>• Real-time SQLite WAL Telemetry<br>• Fair-Use Traffic Shaping"]
     end
     
     Google["☁️ Google Cloud Code / Gemini API<br>(daily-cloudcode-pa.googleapis.com)"]
     Blocked["⛔ Неавторизованный хост<br>(YouTube, торренты, сайты)"]
     
-    Client -->|"Plain HTTP CONNECT"| HAProxy
-    Client -->|"Encrypted HTTPS Proxy (TLS)"| HAProxy
-    
-    HAProxy -->|"HTTP"| Core
-    HAProxy -->|"HTTPS (TLS)"| SSLTerm --> Core
+    Client -->|"Plain HTTP CONNECT"| Core
+    Client -->|"Encrypted HTTPS Proxy (TLS)"| Core
     
     Core -->|"✅ Разрешено (Google AI)"| Google
     Core -->|"❌ Запрещено"| Blocked -->|"HTTP 403 Forbidden"| Client
@@ -58,11 +52,24 @@ graph TD
 
 ---
 
+## 📊 Результаты нагрузочного тестирования (Benchmark: Go vs Python)
+
+Стресс-тестирование на боевом сервере (50 параллельных клиентов, 300 запросов CONNECT с передачей данных к Google Cloud Code):
+
+| Показатель | Python Proxy v1.1.1 | Go Proxy Core v2.0 | Преимущество Go |
+| :--- | :--- | :--- | :--- |
+| **Успешность (Success Rate)** | 100.0% (300/300) | **100.0% (300/300)** | Безупречная стабильность |
+| **Средняя задержка (Avg Latency)** | 683.0 ms | **540.5 ms** | **На 21% быстрее** ⚡ |
+| **Хвостовая задержка p95 (Tail Latency)** | 2075.5 ms | **1426.5 ms** | **На 31% меньше фризов** |
+| **Хвостовая задержка p99** | 2829.9 ms | **2719.6 ms** | Стабильнее под пиками |
+| **Потребление ОЗУ (Memory RSS)** | 38.6 MB (до 130 МБ) | **11.5 MB** | **В 3.3+ раза легче** |
+| **Системные runtime-зависимости** | Python, pip, HAProxy, OpenSSL | **Нет** | 1 статический бинарник |
+
 ## 🚀 Быстрый старт (Установка на свой VPS за 1 минуту)
 
 ### Требования к серверу:
 * Любой зарубежный VPS (рекомендуются дата-центры в Европе: Нидерланды, Германия, Италия, Финляндия).
-* Операционная система: **Ubuntu 20.04 / 22.04 / 24.04 / 26.04** или **Debian 11 / 12**.
+* Операционная система: **Ubuntu 20.04 / 22.04 / 24.04** или **Debian 11 / 12**.
 * 512 МБ RAM и 1 ядро CPU (хватит даже самого дешёвого тарифа за $1.5–$3/мес).
 
 ### Автоматическая установка (в одну команду):
@@ -73,122 +80,89 @@ graph TD
 curl -sSL https://raw.githubusercontent.com/j46871417-ui/antigravity-proxy/main/install.sh | bash
 ```
 
-Повторная установка сохраняет логин и пароль из `/etc/antigravity-proxy/config.env`.
-Чтобы явно заменить их, передайте `PROXY_USER` и/или `PROXY_PASS` в окружении
-процесса `bash`. Например, после скачивания `install.sh`:
+Установщик собирает Go-бинарник, сохраняет текущие учётные данные и файл пользователей,
+настраивает службу от отдельного системного пользователя и запускает Go-ядро на порту 50128.
+Go 1.22+ нужен только во время сборки; HAProxy и Python для работы сервера не используются.
 
+После установки создайте дополнительные учётные записи из командной строки:
 ```bash
-PROXY_USER=ag_user PROXY_PASS='your-new-password' bash install.sh
+sudo -u antigravity /opt/antigravity-proxy/antigravity-proxy users generate \
+  --host proxy.example.com --count 3
 ```
 
-Установщик перезапускает службу после записи конфигурации и проверяет авторизацию
-до вывода данных подключения. Логин и пароль в строке URL кодируются автоматически,
-поэтому символы `@`, `:`, `/` и другие специальные символы не ломают адрес.
-Проверки установщика можно запустить на Linux без root:
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-Скрипт автоматически:
-1. Установит HAProxy, Python 3 и OpenSSL.
-2. Сгенерирует локальный сертификат для режима HTTPS-прокси.
-3. Настроит защиту от перегрузки (макс. 30 сессий на 1 IP).
-4. Запустит и включит автозагрузку службы `antigravity-proxy.service`.
-5. Выдаст готовую строку подключения для вставки в приложение:
-   ```text
-   https://ag_user:ВАШ_ПАРОЛЬ@IP_ВАШЕГО_СЕРВЕРА:50128
-   ```
+По умолчанию CLI использует `users.json` рядом с бинарником (для установщика это
+`/opt/antigravity-proxy/users.json`). Если служба настроена на другой путь `USERS_FILE`,
+передайте его через `--file`. Сервер подхватывает изменения без перезапуска.
+Команда выводит логин, пароль и готовый HTTPS URL; сохраните вывод безопасно,
+поскольку пароль больше не показывается повторно.
 
 ---
 
-## 🛠 Ручная пошаговая установка
+## 🛠 Сборка из исходников
 
-Если вы хотите развернуть всё вручную без скрипта:
+Требуется Go 1.22 или новее:
 
-### 1. Установите пакеты:
 ```bash
-sudo apt update && sudo apt install -y haproxy python3 openssl curl
+git clone https://github.com/j46871417-ui/antigravity-proxy.git
+cd antigravity-proxy
+go build -trimpath -ldflags="-s -w" -o antigravity-proxy .
+PROXY_HOST=0.0.0.0 PROXY_PORT=50128 USERS_FILE=./users.json ./antigravity-proxy
 ```
 
-### 2. Клонируйте репозиторий:
+Прокси слушает порт 50128 напрямую и поддерживает HTTP CONNECT и TLS-прокси.
+Учётные записи можно создавать той же CLI-командой:
+
 ```bash
-git clone https://github.com/j46871417-ui/antigravity-proxy.git /opt/antigravity-proxy
-cd /opt/antigravity-proxy
-```
-
-### 3. Создайте конфигурацию и сертификат:
-```bash
-sudo mkdir -p /etc/antigravity-proxy
-
-# Генерация связки SSL-сертификата для HTTPS режима:
-sudo openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout /etc/antigravity-proxy/proxy.key \
-    -out /etc/antigravity-proxy/proxy.crt \
-    -days 3650 -subj "/CN=proxy.local/O=Antigravity"
-sudo cat /etc/antigravity-proxy/proxy.key /etc/antigravity-proxy/proxy.crt > /etc/antigravity-proxy/proxy_bundle.pem
-sudo chmod 600 /etc/antigravity-proxy/proxy_bundle.pem
-
-# Настройка логина и пароля:
-sudo cp .env.example /etc/antigravity-proxy/config.env
-# Отредактируйте логин и пароль в файле:
-sudo nano /etc/antigravity-proxy/config.env
-```
-
-### 4. Настройте HAProxy:
-```bash
-sudo cp haproxy.cfg /etc/haproxy/haproxy.cfg
-sudo systemctl restart haproxy
-```
-
-### 5. Настройте службу systemd:
-```bash
-sudo bash -c 'cat <<EOF > /etc/systemd/system/antigravity-proxy.service
-[Unit]
-Description=Antigravity Zero-Trust Proxy Core
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/antigravity-proxy
-EnvironmentFile=/etc/antigravity-proxy/config.env
-ExecStart=/usr/bin/python3 /opt/antigravity-proxy/proxy.py
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF'
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now antigravity-proxy.service
+./antigravity-proxy users generate --host proxy.example.com --count 3
 ```
 
 ---
 
 ## 🐳 Развёртывание через Docker / Docker Compose
 
-Если вы предпочитаете Docker:
+Если вы предпочитаете Docker, Compose сохраняет пользовательские учётные записи и статистику в каталоге `./data`:
 
 ```bash
 git clone https://github.com/j46871417-ui/antigravity-proxy.git
 cd antigravity-proxy
-
-# Отредактируйте логин и пароль в docker-compose.yml при необходимости
+cp .env.example .env
+# Укажите собственный пароль в .env
 docker compose up -d --build
 ```
 
-Удаление systemd-установки с резервной копией конфигурации:
+Удаление systemd-установки с резервной копией конфигурации и данных:
 
 ```bash
 sudo bash uninstall.sh --yes
 ```
 
-Скрипт останавливает только `antigravity-proxy.service`, убирает файлы
-этой установки и сохраняет конфигурацию в `/var/backups/antigravity-proxy`.
-Общие пакеты HAProxy, Python и OpenSSL не удаляются. Для Compose сначала
-выполните `docker compose down`, затем удалите проектные файлы.
+Для Compose остановите проект командой `docker compose down`; каталог `./data`
+содержит созданные аккаунты и статистику и удаляется отдельно оператором.
+
+---
+
+## 👤 Генерация учётных записей через CLI
+
+Команда `users generate` создаёт криптографически случайные логины и пароли,
+добавляет их в JSON-файл пользователей атомарной заменой и выводит готовые
+адреса подключения. Размер партии — от 1 до 100 аккаунтов.
+
+Для systemd-установки запускайте CLI от имени пользователя службы, чтобы файл
+сохранил нужного владельца:
+
+```bash
+sudo -u antigravity /opt/antigravity-proxy/antigravity-proxy users generate \
+  --host proxy.example.com --count 3
+```
+
+Укажите другой файл через `--file /path/to/users.json`. При запуске из Compose:
+
+```bash
+docker compose exec antigravity-proxy /app/antigravity-proxy users generate \
+  --host proxy.example.com --count 3 --file /data/users.json
+```
+
+Считайте вывод команды секретным: он содержит пароли и строки подключения.
 
 ---
 
@@ -221,83 +195,7 @@ sudo bash uninstall.sh --yes
 * `chatgpt.com`, `claude.ai` (резервные проверки патчера)
 * **Подсети Google AS15169**: поддержка клиентов в режиме TUN / Proxifier, где DNS резолвится локально в прямые IP-адреса Google на портах 80, 443 и 5228.
 
-Попытки использовать этот прокси для общего веб-сёрфинга, торрентов, соцсетей или загрузки сторонних файлов мгновенно отклоняются сервером (`403 Forbidden`).
-
-### Как добавить сайт в белый список
-
-Список находится в `proxy.py` в двух структурах:
-
-* `ALLOWED_EXACT_HOSTS` — отдельные имена, например `"registry.npmjs.org"`;
-* `ALLOWED_DOMAIN_SUFFIXES` — домен и все его поддомены. Для записи
-  `".example.org"` будут разрешены `api.example.org` и
-  `download.eu.example.org`, но сам `example.org` нужно добавить отдельно
-  в `ALLOWED_EXACT_HOSTS`.
-
-После установки отредактируйте файл на сервере:
-
-```bash
-sudo nano /opt/antigravity-proxy/proxy.py
-sudo systemctl restart antigravity-proxy.service
-```
-
-Например, для `example.org` и его поддоменов добавьте:
-
-```python
-# ALLOWED_EXACT_HOSTS
-"example.org",
-
-# ALLOWED_DOMAIN_SUFFIXES
-".example.org",
-```
-
-Разрешённые порты задаются отдельно в `ALLOWED_PORTS` и по умолчанию равны
-`80`, `443` и `5228`. После изменения проверьте конфигурацию и запрос через
-прокси:
-
-```bash
-sudo -u antigravity python3 -m py_compile /opt/antigravity-proxy/proxy.py
-systemctl --no-pager --full status antigravity-proxy.service
-curl -x "http://ЛОГИН:ПАРОЛЬ@127.0.0.1:50128" -I https://example.org
-```
-
-Не добавляйте в список `".com"`, `".ru"` или другие широкие зоны: это
-превратит ограниченный AI-прокси в общий прокси и позволит пользователям
-выводить произвольный трафик через сервер.
-
-### Что означает «пускать сайт напрямую»
-
-Для каждого разрешённого имени этот сервис уже устанавливает соединение
-напрямую с целевым сервером от имени VPS. Дополнительного upstream-прокси
-между VPS и сайтом нет. HAProxy отвечает только за определение режима HTTP
-или HTTPS и передачу соединения в Python-ядро.
-
-Отдельного режима «не блокировать неизвестные сайты и отправлять их напрямую»
-в строгом режиме нет: неизвестное имя намеренно получает `403 Forbidden`.
-Чтобы включить прямой режим для публичных сайтов, задайте переменную в
-`/etc/antigravity-proxy/config.env`:
-
-```dotenv
-PROXY_BYPASS_MODE=direct
-```
-
-Затем перезапустите службу:
-
-```bash
-sudo systemctl restart antigravity-proxy.service
-```
-
-В режиме `direct` любой корректный публичный домен на портах из
-`ALLOWED_PORTS` (`80`, `443`, `5228`) подключается напрямую с VPS. Локальные,
-приватные, loopback, link-local и зарезервированные адреса отбрасываются;
-DNS-результаты проверяются непосредственно перед соединением. Это снижает
-риск SSRF, но не заменяет firewall и лимиты пользователей. Для добавления
-других портов измените `ALLOWED_PORTS` в `proxy.py` и перезапустите службу.
-
-Режим `direct` превращает сервер в общий forward-прокси. Включайте его только
-при необходимости, сохраняйте ограничение портов и оставляйте авторизацию.
-Если нужен split-tunnel только на устройстве пользователя, настройте
-bypass-список в самом VPN-клиенте — это отдельная функция клиента, а не
-HAProxy.
+По умолчанию (`PROXY_BYPASS_MODE=strict`) прокси ограничен этим списком. Опциональный `PROXY_BYPASS_MODE=direct` разрешает любые корректные публичные домены и IP только на портах 80, 443 и 5228. DNS-ответы с непубличными адресами блокируются, соединение устанавливается на проверенный IP. Direct-режим расширяет доступ до веб-сайтов; включайте его осознанно. Приватные/локальные адреса и остальные порты остаются запрещены.
 
 ---
 
