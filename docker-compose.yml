@@ -8,8 +8,8 @@ services:
     environment:
       PROXY_HOST: 0.0.0.0
       PROXY_PORT: 50128
-      PROXY_USER: ${PROXY_USER:-antigravity}
-      PROXY_PASS: ${PROXY_PASS:-change-this-password}
+      PROXY_USER: ${PROXY_USER:?Set PROXY_USER in .env}
+      PROXY_PASS: ${PROXY_PASS:?Set PROXY_PASS in .env}
       USERS_FILE: /data/users.json
       USER_TRAFFIC_FILE: /data/user_traffic.json
       STATS_DB: /data/stats.db
