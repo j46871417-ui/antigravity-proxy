@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8.svg?logo=go)](https://go.dev/)
-[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)]()
+[![No system dependencies](https://img.shields.io/badge/runtime-no%20system%20dependencies-success.svg)]()
 [![Docker Ready](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](docker-compose.yml)
 [![Telegram Chat](https://img.shields.io/badge/Telegram-Беседа_сообщества-2CA5E0?logo=telegram)](https://t.me/+8qU7020rMF84OWNi)
 
@@ -19,7 +19,7 @@
 | Особенность | Обычный VPN / Python Proxy | Antigravity Proxy v2.0 (Go) |
 | :--- | :--- | :--- |
 | **Архитектура** | HAProxy + SSL Terminator + Python | **Один статический бинарник (~6 МБ)** без внешних пакетов |
-| **Зависимости** | Python, OpenSSL, HAProxy, bash-скрипты | **Нулевые системные зависимости** (Zero-Dependency) |
+| **Зависимости** | Python, OpenSSL, HAProxy, bash-скрипты | **Без системных runtime-зависимостей** |
 | **Режим входа** | Либо только HTTP, либо только HTTPS | **Двухрежимный (Dual-Mode):** авто-сниффинг через `Peek(1) == 0x16` (TLS vs Plain CONNECT) |
 | **Туннелирование** | Копирование через userspace | **Zero-Copy Splice:** Linux-системный вызов `splice(2)` между сокетами в ядре |
 | **TLS-сертификаты** | Генерация через OpenSSL на диск | **In-Memory TLS:** динамическая генерация ключей и сертификата в RAM |
@@ -80,86 +80,49 @@ graph TD
 curl -sSL https://raw.githubusercontent.com/j46871417-ui/antigravity-proxy/main/install.sh | bash
 ```
 
-Скрипт автоматически:
-1. Установит HAProxy, Python 3 и OpenSSL.
-2. Сгенерирует локальный сертификат для режима HTTPS-прокси.
-3. Настроит защиту от перегрузки (макс. 30 сессий на 1 IP).
-4. Запустит и включит автозагрузку службы `antigravity-proxy.service`.
-5. Выдаст готовую строку подключения для вставки в приложение:
+Установщик собирает Go-бинарник, сохраняет текущие учётные данные и файл пользователей,
+настраивает службу от отдельного системного пользователя и запускает Go-ядро на порту 50128.
+Go 1.22+ нужен только во время сборки; HAProxy и Python для работы сервера не используются.
+
+После установки создайте дополнительные учётные записи из командной строки:
+```bash
+sudo -u antigravity /opt/antigravity-proxy/antigravity-proxy users generate \
+  --host proxy.example.com --count 3
+```
+
+По умолчанию аккаунты добавляются в `USERS_FILE` из конфигурации службы
+(`/opt/antigravity-proxy/users.json`). Сервер подхватывает изменения без перезапуска.
+Команда выводит логин, пароль и готовый HTTPS URL; сохраните вывод безопасно,
+поскольку пароль больше не показывается повторно.
    ```text
    https://ag_user:ВАШ_ПАРОЛЬ@IP_ВАШЕГО_СЕРВЕРА:50128
    ```
 
 ---
 
-## 🛠 Ручная пошаговая установка
+## 🛠 Сборка из исходников
 
-Если вы хотите развернуть всё вручную без скрипта:
+Требуется Go 1.22 или новее:
 
-### 1. Установите пакеты:
 ```bash
-sudo apt update && sudo apt install -y haproxy python3 openssl curl
+git clone https://github.com/j46871417-ui/antigravity-proxy.git
+cd antigravity-proxy
+go build -trimpath -ldflags="-s -w" -o antigravity-proxy .
+PROXY_HOST=0.0.0.0 PROXY_PORT=50128 USERS_FILE=./users.json ./antigravity-proxy
 ```
 
-### 2. Клонируйте репозиторий:
+Прокси слушает порт 50128 напрямую и поддерживает HTTP CONNECT и TLS-прокси.
+Учётные записи можно создавать той же CLI-командой:
+
 ```bash
-git clone https://github.com/j46871417-ui/antigravity-proxy.git /opt/antigravity-proxy
-cd /opt/antigravity-proxy
-```
-
-### 3. Создайте конфигурацию и сертификат:
-```bash
-sudo mkdir -p /etc/antigravity-proxy
-
-# Генерация связки SSL-сертификата для HTTPS режима:
-sudo openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout /etc/antigravity-proxy/proxy.key \
-    -out /etc/antigravity-proxy/proxy.crt \
-    -days 3650 -subj "/CN=proxy.local/O=Antigravity"
-sudo cat /etc/antigravity-proxy/proxy.key /etc/antigravity-proxy/proxy.crt > /etc/antigravity-proxy/proxy_bundle.pem
-sudo chmod 600 /etc/antigravity-proxy/proxy_bundle.pem
-
-# Настройка логина и пароля:
-sudo cp .env.example /etc/antigravity-proxy/config.env
-# Отредактируйте логин и пароль в файле:
-sudo nano /etc/antigravity-proxy/config.env
-```
-
-### 4. Настройте HAProxy:
-```bash
-sudo cp haproxy.cfg /etc/haproxy/haproxy.cfg
-sudo systemctl restart haproxy
-```
-
-### 5. Настройте службу systemd:
-```bash
-sudo bash -c 'cat <<EOF > /etc/systemd/system/antigravity-proxy.service
-[Unit]
-Description=Antigravity Zero-Trust Proxy Core
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/antigravity-proxy
-EnvironmentFile=/etc/antigravity-proxy/config.env
-ExecStart=/usr/bin/python3 /opt/antigravity-proxy/proxy.py
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF'
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now antigravity-proxy.service
+./antigravity-proxy users generate --host proxy.example.com --count 3
 ```
 
 ---
 
 ## 🐳 Развёртывание через Docker / Docker Compose
 
-Если вы предпочитаете Docker:
+Если вы предпочитаете Docker, Compose сохраняет пользовательские учётные записи и статистику в каталоге `./data`:
 
 ```bash
 git clone https://github.com/j46871417-ui/antigravity-proxy.git
@@ -168,6 +131,31 @@ cd antigravity-proxy
 # Отредактируйте логин и пароль в docker-compose.yml при необходимости
 docker compose up -d --build
 ```
+
+---
+
+## 👤 Генерация учётных записей через CLI
+
+Команда `users generate` создаёт криптографически случайные логины и пароли,
+добавляет их в JSON-файл пользователей атомарной заменой и выводит готовые
+адреса подключения. Размер партии — от 1 до 100 аккаунтов.
+
+Для systemd-установки запускайте CLI от имени пользователя службы, чтобы файл
+сохранил нужного владельца:
+
+```bash
+sudo -u antigravity /opt/antigravity-proxy/antigravity-proxy users generate \
+  --host proxy.example.com --count 3
+```
+
+Укажите другой файл через `--file /path/to/users.json`. При запуске из Compose:
+
+```bash
+docker compose exec antigravity-proxy /app/antigravity-proxy users generate \
+  --host proxy.example.com --count 3 --file /data/users.json
+```
+
+Считайте вывод команды секретным: он содержит пароли и строки подключения.
 
 ---
 
