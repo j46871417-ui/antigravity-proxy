@@ -91,7 +91,7 @@ mkdir -p "$SOURCE_DIR"
 curl -fsSL "$REPO/archive/refs/heads/main.tar.gz" | tar -xz --strip-components=1 -C "$SOURCE_DIR"
 (
     cd "$SOURCE_DIR"
-    GOTOOLCHAIN=local "$GO_BIN" build -trimpath -ldflags="-s -w" -o "$WORK_DIR/antigravity-proxy" .
+    GOMAXPROCS=1 GOGC=50 GOTOOLCHAIN=local "$GO_BIN" build -p=1 -trimpath -ldflags="-s -w" -o "$WORK_DIR/antigravity-proxy" .
 )
 
 PROXY_USER="${PROXY_USER:-$(read_config_value PROXY_USER)}"
@@ -193,6 +193,34 @@ systemctl daemon-reload
 systemctl enable antigravity-proxy.service
 systemctl restart antigravity-proxy.service
 systemctl --no-pager --full status antigravity-proxy.service
+
+# Confirm the saved credentials are accepted locally without relying on an upstream host.
+PROXY_USER="$PROXY_USER" PROXY_PASS="$PROXY_PASS" python3 - <<'PY'
+import base64
+import http.client
+import os
+import time
+
+token = (os.environ["PROXY_USER"] + ":" + os.environ["PROXY_PASS"]).encode()
+headers = {"Proxy-Authorization": "Basic " + base64.b64encode(token).decode("ascii")}
+for attempt in range(20):
+    connection = http.client.HTTPConnection("127.0.0.1", 50128, timeout=1)
+    try:
+        connection.request("CONNECT", "installer-check.invalid:1", headers=headers)
+        response = connection.getresponse()
+        response.read()
+        if response.status == 403:
+            break
+        if response.status == 407:
+            raise SystemExit("Saved credentials were rejected; installation is not verified")
+        raise SystemExit("Unexpected proxy response; installation is not verified")
+    except (OSError, http.client.HTTPException):
+        if attempt == 19:
+            raise SystemExit("Proxy did not become ready; installation is not verified")
+        time.sleep(0.25)
+    finally:
+        connection.close()
+PY
 
 echo
 echo "Antigravity Proxy v2 Go engine is active."
