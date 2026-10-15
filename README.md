@@ -63,7 +63,7 @@ graph TD
 | **Хвостовая задержка p95 (Tail Latency)** | 2075.5 ms | **1426.5 ms** | **На 31% меньше фризов** |
 | **Хвостовая задержка p99** | 2829.9 ms | **2719.6 ms** | Стабильнее под пиками |
 | **Потребление ОЗУ (Memory RSS)** | 38.6 MB (до 130 МБ) | **11.5 MB** | **В 3.3+ раза легче** |
-| **Внешние зависимости** | Python, pip, HAProxy, OpenSSL | **0 (Zero-Dependency)** | 1 статический бинарник |
+| **Системные runtime-зависимости** | Python, pip, HAProxy, OpenSSL | **Нет** | 1 статический бинарник |
 
 ## 🚀 Быстрый старт (Установка на свой VPS за 1 минуту)
 
@@ -90,13 +90,11 @@ sudo -u antigravity /opt/antigravity-proxy/antigravity-proxy users generate \
   --host proxy.example.com --count 3
 ```
 
-По умолчанию аккаунты добавляются в `USERS_FILE` из конфигурации службы
-(`/opt/antigravity-proxy/users.json`). Сервер подхватывает изменения без перезапуска.
+По умолчанию CLI использует `users.json` рядом с бинарником (для установщика это
+`/opt/antigravity-proxy/users.json`). Если служба настроена на другой путь `USERS_FILE`,
+передайте его через `--file`. Сервер подхватывает изменения без перезапуска.
 Команда выводит логин, пароль и готовый HTTPS URL; сохраните вывод безопасно,
 поскольку пароль больше не показывается повторно.
-   ```text
-   https://ag_user:ВАШ_ПАРОЛЬ@IP_ВАШЕГО_СЕРВЕРА:50128
-   ```
 
 ---
 
@@ -127,8 +125,8 @@ PROXY_HOST=0.0.0.0 PROXY_PORT=50128 USERS_FILE=./users.json ./antigravity-proxy
 ```bash
 git clone https://github.com/j46871417-ui/antigravity-proxy.git
 cd antigravity-proxy
-
-# Отредактируйте логин и пароль в docker-compose.yml при необходимости
+cp .env.example .env
+# Укажите собственный пароль в .env
 docker compose up -d --build
 ```
 
