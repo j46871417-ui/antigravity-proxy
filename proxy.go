@@ -261,11 +261,27 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 
 	log.Printf("[INFO] Allowed %s %s:%d from %s", method, targetHost, targetPort, clientIP)
 
-	// Connect upstream
-	targetAddr := net.JoinHostPort(targetHost, strconv.Itoa(targetPort))
-	upstream, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
-	if err != nil {
-		log.Printf("[ERROR] Failed to connect to %s: %v", targetAddr, err)
+	// Resolve and pin direct-mode destinations after validation to prevent DNS rebinding.
+	var upstream net.Conn
+	var dialErr error
+	if directBypass {
+		targets, resolveErr := ResolveDirectTargets(targetHost, targetPort)
+		dialErr = resolveErr
+		for _, addr := range targets {
+			if dialErr != nil {
+				break
+			}
+			upstream, dialErr = net.DialTimeout("tcp", addr, 10*time.Second)
+			if dialErr == nil {
+				break
+			}
+		}
+	} else {
+		targetAddr := net.JoinHostPort(targetHost, strconv.Itoa(targetPort))
+		upstream, dialErr = net.DialTimeout("tcp", targetAddr, 10*time.Second)
+	}
+	if dialErr != nil {
+		log.Printf("[ERROR] Failed to connect to %s:%d: %v", targetHost, targetPort, dialErr)
 		s.statsMgr.Record(proxyUser, targetHost, targetPort, "error", 0, 0, 0)
 		s.sendError(conn, 502, "Bad Gateway", "Connection failed")
 		return
