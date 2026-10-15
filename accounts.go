@@ -48,6 +48,9 @@ func runUsersCommand(args []string) error {
 	if strings.TrimSpace(*host) == "" || strings.ContainsAny(*host, "/?#@") {
 		return fmt.Errorf("--host must be a hostname or IP address")
 	}
+	if strings.TrimSpace(*usersFile) == "" {
+		return fmt.Errorf("--file cannot be empty")
+	}
 	portNumber, err := strconv.Atoi(*port)
 	if err != nil || portNumber < 1 || portNumber > 65535 {
 		return fmt.Errorf("--port must be an integer between 1 and 65535")
