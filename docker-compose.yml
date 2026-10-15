@@ -10,6 +10,7 @@ services:
       PROXY_PORT: 50128
       PROXY_USER: ${PROXY_USER:?Set PROXY_USER in .env}
       PROXY_PASS: ${PROXY_PASS:?Set PROXY_PASS in .env}
+      PROXY_BYPASS_MODE: ${PROXY_BYPASS_MODE:-strict}
       USERS_FILE: /data/users.json
       USER_TRAFFIC_FILE: /data/user_traffic.json
       STATS_DB: /data/stats.db
