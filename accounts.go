@@ -24,7 +24,12 @@ func runUsersCommand(args []string) error {
 
 	defaultFile := os.Getenv("USERS_FILE")
 	if defaultFile == "" {
-		defaultFile = "users.json"
+		executable, err := os.Executable()
+		if err == nil {
+			defaultFile = filepath.Join(filepath.Dir(executable), "users.json")
+		} else {
+			defaultFile = "users.json"
+		}
 	}
 	defaultPort := os.Getenv("PROXY_PORT")
 	if defaultPort == "" {
