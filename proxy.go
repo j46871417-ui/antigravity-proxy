@@ -267,13 +267,12 @@ func (s *ProxyServer) handleClient(conn net.Conn, clientIP string) {
 	if directBypass {
 		targets, resolveErr := ResolveDirectTargets(targetHost, targetPort)
 		dialErr = resolveErr
-		for _, addr := range targets {
-			if dialErr != nil {
-				break
-			}
-			upstream, dialErr = net.DialTimeout("tcp", addr, 10*time.Second)
-			if dialErr == nil {
-				break
+		if resolveErr == nil {
+			for _, addr := range targets {
+				upstream, dialErr = net.DialTimeout("tcp", addr, 10*time.Second)
+				if dialErr == nil {
+					break
+				}
 			}
 		}
 	} else {
