@@ -1,11 +1,8 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"log"
 	"net"
-	"strconv"
 	"strings"
 )
 
@@ -35,6 +32,22 @@ var allowedExactHosts = map[string]struct{}{
 	"api.openai.com":                                             {},
 	"api.anthropic.com":                                          {},
 	"antigravity-cli-auto-updater-974169037036.us-central1.run.app": {},
+	"x.ai": {},
+	"api.x.ai": {},
+	"grok.com": {},
+	"sora.com": {},
+	"cursor.sh": {},
+	"api.cursor.sh": {},
+	"windsurf.ai": {},
+	"api.windsurf.ai": {},
+	"codeium.com": {},
+	"api.codeium.com": {},
+	"githubcopilot.com": {},
+	"api.githubcopilot.com": {},
+	"perplexity.ai": {},
+	"api.perplexity.ai": {},
+	"huggingface.co": {},
+	"midjourney.com": {},
 }
 
 var allowedDomainSuffixes = []string{
@@ -48,6 +61,17 @@ var allowedDomainSuffixes = []string{
 	".openai.com",
 	".anthropic.com",
 	".claude.ai",
+	".x.ai",
+	".grok.com",
+	".sora.com",
+	".cursor.sh",
+	".cursor.com",
+	".windsurf.ai",
+	".codeium.com",
+	".githubcopilot.com",
+	".perplexity.ai",
+	".huggingface.co",
+	".midjourney.com",
 }
 
 var googleCIDRStrings = []string{
