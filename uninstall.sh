@@ -37,6 +37,7 @@ backup_file() {
 }
 
 backup_file "$CONF_DIR"
+backup_file "$INSTALL_DIR"
 backup_file /etc/haproxy/haproxy.cfg
 backup_file /etc/systemd/system/$SERVICE
 
